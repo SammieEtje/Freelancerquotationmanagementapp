@@ -26,7 +26,7 @@ export const QuotationDetail: React.FC<QuotationDetailProps> = ({ quotationId, o
     try {
       // Fetch quotation
       const quotationResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-82bafaab/quotations/${quotationId}`,
+        `https://${projectId}.supabase.co/functions/v1/server/quotations/${quotationId}`,
         {
           headers: {
             'Authorization': `Bearer ${accessToken}`,
@@ -36,7 +36,7 @@ export const QuotationDetail: React.FC<QuotationDetailProps> = ({ quotationId, o
 
       // Fetch profile
       const profileResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-82bafaab/profile`,
+        `https://${projectId}.supabase.co/functions/v1/server/profile`,
         {
           headers: {
             'Authorization': `Bearer ${accessToken}`,
@@ -62,7 +62,7 @@ export const QuotationDetail: React.FC<QuotationDetailProps> = ({ quotationId, o
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-82bafaab/quotations/${quotationId}`,
+        `https://${projectId}.supabase.co/functions/v1/server/quotations/${quotationId}`,
         {
           method: 'DELETE',
           headers: {

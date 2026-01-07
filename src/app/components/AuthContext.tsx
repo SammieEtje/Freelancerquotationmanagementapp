@@ -87,7 +87,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signUp = async (email: string, password: string, name: string, companyName: string) => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-82bafaab/signup`,
+        `https://${projectId}.supabase.co/functions/v1/server/signup`,
         {
           method: 'POST',
           headers: {

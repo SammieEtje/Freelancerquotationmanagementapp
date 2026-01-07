@@ -31,7 +31,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-82bafaab/quotations`,
+        `https://${projectId}.supabase.co/functions/v1/server/quotations`,
         {
           headers: {
             'Authorization': `Bearer ${accessToken}`,

@@ -49,7 +49,7 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({ quotationId, onNav
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-82bafaab/quotations/${quotationId}`,
+        `https://${projectId}.supabase.co/functions/v1/server/quotations/${quotationId}`,
         {
           headers: {
             'Authorization': `Bearer ${accessToken}`,
@@ -87,8 +87,8 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({ quotationId, onNav
       }
 
       const url = quotationId
-        ? `https://${projectId}.supabase.co/functions/v1/make-server-82bafaab/quotations/${quotationId}`
-        : `https://${projectId}.supabase.co/functions/v1/make-server-82bafaab/quotations`;
+        ? `https://${projectId}.supabase.co/functions/v1/server/quotations/${quotationId}`
+        : `https://${projectId}.supabase.co/functions/v1/server/quotations`;
 
       const method = quotationId ? 'PUT' : 'POST';
 

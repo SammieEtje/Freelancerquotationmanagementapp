@@ -41,7 +41,7 @@ export const Settings: React.FC<SettingsProps> = ({ onNavigate }) => {
     setLoading(true);
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-82bafaab/profile`,
+        `https://${projectId}.supabase.co/functions/v1/server/profile`,
         {
           headers: {
             'Authorization': `Bearer ${accessToken}`,
@@ -91,7 +91,7 @@ export const Settings: React.FC<SettingsProps> = ({ onNavigate }) => {
       console.log('Access token present:', !!accessToken);
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-82bafaab/profile`,
+        `https://${projectId}.supabase.co/functions/v1/server/profile`,
         {
           method: 'PUT',
           headers: {

@@ -13,7 +13,7 @@ export const DebugPanel: React.FC = () => {
     setLoading(true);
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-82bafaab/health`
+        `https://${projectId}.supabase.co/functions/v1/server/health`
       );
       const data = await response.json();
       setTestResult({ endpoint: 'health', success: true, data });
@@ -31,7 +31,7 @@ export const DebugPanel: React.FC = () => {
       console.log('Access token:', accessToken?.substring(0, 20) + '...');
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-82bafaab/profile`,
+        `https://${projectId}.supabase.co/functions/v1/server/profile`,
         {
           headers: {
             'Authorization': `Bearer ${accessToken}`,
@@ -75,7 +75,7 @@ export const DebugPanel: React.FC = () => {
       };
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-82bafaab/quotations`,
+        `https://${projectId}.supabase.co/functions/v1/server/quotations`,
         {
           method: 'POST',
           headers: {
