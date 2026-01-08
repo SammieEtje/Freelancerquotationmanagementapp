@@ -2,7 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { useAuth } from './AuthContext';
-import { projectId } from '../../../utils/supabase/info';
+import { api } from '../../utils/apiClient';
+import { getStatusLabel, getStatusColor } from '../../utils/statusHelpers';
+import { calculateVat, calculateTotal } from '../../utils/calculations';
 import jsPDF from 'jspdf';
 
 interface QuotationDetailProps {
@@ -24,32 +26,12 @@ export const QuotationDetail: React.FC<QuotationDetailProps> = ({ quotationId, o
     if (!accessToken) return;
 
     try {
-      // Fetch quotation
-      const quotationResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/server/quotations/${quotationId}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-          },
-        }
-      );
-
-      // Fetch profile
-      const profileResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/server/profile`,
-        {
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-          },
-        }
-      );
-
-      if (quotationResponse.ok && profileResponse.ok) {
-        const quotationData = await quotationResponse.json();
-        const profileData = await profileResponse.json();
-        setQuotation(quotationData.quotation);
-        setProfile(profileData.profile);
-      }
+      const [quotationData, profileData] = await Promise.all([
+        api.getQuotation(accessToken, quotationId),
+        api.getProfile(accessToken),
+      ]);
+      setQuotation(quotationData.quotation);
+      setProfile(profileData.profile);
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
@@ -59,21 +41,11 @@ export const QuotationDetail: React.FC<QuotationDetailProps> = ({ quotationId, o
 
   const handleDelete = async () => {
     if (!confirm('Weet je zeker dat je deze offerte wilt verwijderen?')) return;
+    if (!accessToken) return;
 
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/server/quotations/${quotationId}`,
-        {
-          method: 'DELETE',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-          },
-        }
-      );
-
-      if (response.ok) {
-        onNavigate('quotations');
-      }
+      await api.deleteQuotation(accessToken, quotationId);
+      onNavigate('quotations');
     } catch (error) {
       console.error('Error deleting quotation:', error);
     }
@@ -202,25 +174,6 @@ export const QuotationDetail: React.FC<QuotationDetailProps> = ({ quotationId, o
     }
   };
 
-  const calculateVat = () => {
-    if (!quotation) return 0;
-    return (quotation.price * quotation.vatPercentage) / 100;
-  };
-
-  const calculateTotal = () => {
-    if (!quotation) return 0;
-    return quotation.price + calculateVat();
-  };
-
-  const getStatusLabel = (status: string) => {
-    switch (status) {
-      case 'draft': return 'Concept';
-      case 'sent': return 'Verstuurd';
-      case 'accepted': return 'Geaccepteerd';
-      default: return status;
-    }
-  };
-
   if (loading) {
     return <div className="min-h-screen bg-gray-50 flex items-center justify-center">Laden...</div>;
   }
@@ -264,11 +217,7 @@ export const QuotationDetail: React.FC<QuotationDetailProps> = ({ quotationId, o
                 <CardTitle className="text-2xl mb-2">Offerte Details</CardTitle>
                 <p className="text-gray-600">{quotation.quotationNumber}</p>
               </div>
-              <span className={`text-sm px-3 py-1 rounded ${
-                quotation.status === 'accepted' ? 'bg-green-100 text-green-800' :
-                quotation.status === 'sent' ? 'bg-blue-100 text-blue-800' :
-                'bg-gray-100 text-gray-800'
-              }`}>
+              <span className={`text-sm px-3 py-1 rounded ${getStatusColor(quotation.status)}`}>
                 {getStatusLabel(quotation.status)}
               </span>
             </div>
@@ -301,11 +250,11 @@ export const QuotationDetail: React.FC<QuotationDetailProps> = ({ quotationId, o
               </div>
               <div className="flex justify-between">
                 <span>BTW ({quotation.vatPercentage}%):</span>
-                <span>€{calculateVat().toFixed(2)}</span>
+                <span>€{calculateVat(quotation.price, quotation.vatPercentage).toFixed(2)}</span>
               </div>
               <div className="flex justify-between font-bold text-lg border-t pt-2">
                 <span>Totaal incl. BTW:</span>
-                <span>€{calculateTotal().toFixed(2)}</span>
+                <span>€{calculateTotal(quotation.price, quotation.vatPercentage).toFixed(2)}</span>
               </div>
             </div>
 

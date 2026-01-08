@@ -4,7 +4,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { Input } from './ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { useAuth } from './AuthContext';
-import { projectId } from '../../../utils/supabase/info';
+import { api } from '../../utils/apiClient';
+import { getStatusLabel, getStatusColor } from '../../utils/statusHelpers';
 
 interface QuotationsListProps {
   onNavigate: (page: string) => void;
@@ -30,22 +31,11 @@ export const QuotationsList: React.FC<QuotationsListProps> = ({ onNavigate }) =>
     if (!accessToken) return;
 
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/server/quotations`,
-        {
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-          },
-        }
+      const data = await api.getQuotations(accessToken);
+      const sortedQuotations = (data.quotations || []).sort((a: any, b: any) =>
+        new Date(b.date).getTime() - new Date(a.date).getTime()
       );
-
-      if (response.ok) {
-        const data = await response.json();
-        const sortedQuotations = (data.quotations || []).sort((a: any, b: any) => 
-          new Date(b.date).getTime() - new Date(a.date).getTime()
-        );
-        setQuotations(sortedQuotations);
-      }
+      setQuotations(sortedQuotations);
     } catch (error) {
       console.error('Error fetching quotations:', error);
     } finally {
@@ -68,24 +58,6 @@ export const QuotationsList: React.FC<QuotationsListProps> = ({ onNavigate }) =>
     }
 
     setFilteredQuotations(filtered);
-  };
-
-  const getStatusLabel = (status: string) => {
-    switch (status) {
-      case 'draft': return 'Concept';
-      case 'sent': return 'Verstuurd';
-      case 'accepted': return 'Geaccepteerd';
-      default: return status;
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'draft': return 'bg-gray-100 text-gray-800';
-      case 'sent': return 'bg-blue-100 text-blue-800';
-      case 'accepted': return 'bg-green-100 text-green-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
   };
 
   return (
