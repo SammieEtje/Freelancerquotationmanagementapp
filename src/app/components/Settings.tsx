@@ -5,7 +5,7 @@ import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { useAuth } from './AuthContext';
-import { projectId } from '../../../utils/supabase/info';
+import { api } from '../../utils/apiClient';
 
 interface SettingsProps {
   onNavigate: (page: string) => void;
@@ -32,43 +32,21 @@ export const Settings: React.FC<SettingsProps> = ({ onNavigate }) => {
   }, [accessToken]);
 
   const fetchProfile = async () => {
-    if (!accessToken) {
-      console.log('No access token, skipping profile fetch');
-      return;
-    }
+    if (!accessToken) return;
 
-    console.log('Fetching profile...');
     setLoading(true);
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/server/profile`,
-        {
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-          },
-        }
-      );
-
-      console.log('Profile fetch response status:', response.status);
-
-      if (response.ok) {
-        const data = await response.json();
-        console.log('Profile data:', data);
-        const profile = data.profile;
-        setFormData({
-          companyName: profile.companyName || '',
-          name: profile.name || '',
-          address: profile.address || '',
-          email: profile.email || '',
-          phone: profile.phone || '',
-          kvkNumber: profile.kvkNumber || '',
-          vatNumber: profile.vatNumber || '',
-        });
-        console.log('Profile loaded successfully');
-      } else {
-        const errorData = await response.json();
-        console.error('Failed to fetch profile:', errorData);
-      }
+      const data = await api.getProfile(accessToken);
+      const profile = data.profile;
+      setFormData({
+        companyName: profile.companyName || '',
+        name: profile.name || '',
+        address: profile.address || '',
+        email: profile.email || '',
+        phone: profile.phone || '',
+        kvkNumber: profile.kvkNumber || '',
+        vatNumber: profile.vatNumber || '',
+      });
     } catch (error) {
       console.error('Error fetching profile:', error);
     } finally {
@@ -87,39 +65,7 @@ export const Settings: React.FC<SettingsProps> = ({ onNavigate }) => {
         throw new Error('Je bent niet ingelogd. Log opnieuw in.');
       }
 
-      console.log('Saving profile with data:', formData);
-      console.log('Access token present:', !!accessToken);
-
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/server/profile`,
-        {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${accessToken}`,
-          },
-          body: JSON.stringify(formData),
-        }
-      );
-
-      console.log('Profile update response status:', response.status);
-
-      let data;
-      try {
-        data = await response.json();
-        console.log('Profile update response data:', data);
-      } catch (parseError) {
-        console.error('Failed to parse response:', parseError);
-        throw new Error('Ongeldig antwoord van server');
-      }
-
-      if (!response.ok) {
-        const errorMessage = data.error || `Server error (${response.status})`;
-        console.error('Server returned error:', errorMessage);
-        throw new Error(errorMessage);
-      }
-
-      console.log('Profile saved successfully!');
+      await api.updateProfile(accessToken, formData);
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
     } catch (err: any) {

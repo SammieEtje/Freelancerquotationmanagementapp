@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { useAuth } from './AuthContext';
-import { projectId } from '../../../utils/supabase/info';
+import { api } from '../../utils/apiClient';
+import { getStatusLabel, getStatusColor } from '../../utils/statusHelpers';
 import { DebugPanel } from './DebugPanel';
 
 interface DashboardProps {
@@ -30,30 +31,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     if (!accessToken) return;
 
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/server/quotations`,
-        {
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-          },
-        }
-      );
+      const data = await api.getQuotations(accessToken);
+      const quotations = data.quotations || [];
 
-      if (response.ok) {
-        const data = await response.json();
-        const quotations = data.quotations || [];
+      const newStats = {
+        total: quotations.length,
+        draft: quotations.filter((q: any) => q.status === 'draft').length,
+        sent: quotations.filter((q: any) => q.status === 'sent').length,
+        accepted: quotations.filter((q: any) => q.status === 'accepted').length,
+      };
 
-        // Calculate stats
-        const newStats = {
-          total: quotations.length,
-          draft: quotations.filter((q: any) => q.status === 'draft').length,
-          sent: quotations.filter((q: any) => q.status === 'sent').length,
-          accepted: quotations.filter((q: any) => q.status === 'accepted').length,
-        };
-
-        setStats(newStats);
-        setRecentQuotations(quotations.slice(0, 5));
-      }
+      setStats(newStats);
+      setRecentQuotations(quotations.slice(0, 5));
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
     } finally {
@@ -158,16 +147,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                     </div>
                     <div className="text-right">
                       <p className="font-medium">€{quotation.price.toFixed(2)}</p>
-                      <span
-                        className={`text-xs px-2 py-1 rounded ${
-                          quotation.status === 'accepted'
-                            ? 'bg-green-100 text-green-800'
-                            : quotation.status === 'sent'
-                            ? 'bg-blue-100 text-blue-800'
-                            : 'bg-gray-100 text-gray-800'
-                        }`}
-                      >
-                        {quotation.status === 'draft' ? 'Concept' : quotation.status === 'sent' ? 'Verstuurd' : 'Geaccepteerd'}
+                      <span className={`text-xs px-2 py-1 rounded ${getStatusColor(quotation.status)}`}>
+                        {getStatusLabel(quotation.status)}
                       </span>
                     </div>
                   </div>

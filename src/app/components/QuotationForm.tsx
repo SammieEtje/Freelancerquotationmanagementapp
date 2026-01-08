@@ -6,7 +6,8 @@ import { Textarea } from './ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { useAuth } from './AuthContext';
-import { projectId } from '../../../utils/supabase/info';
+import { api } from '../../utils/apiClient';
+import { calculateVat, calculateTotal } from '../../utils/calculations';
 
 interface QuotationFormProps {
   quotationId?: string;
@@ -48,28 +49,17 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({ quotationId, onNav
     if (!accessToken || !quotationId) return;
 
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/server/quotations/${quotationId}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-          },
-        }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        const quotation = data.quotation;
-        setFormData({
-          clientName: quotation.clientName,
-          clientAddress: quotation.clientAddress,
-          description: quotation.description,
-          price: quotation.price.toString(),
-          vatPercentage: quotation.vatPercentage.toString(),
-          status: quotation.status,
-          date: quotation.date.split('T')[0],
-        });
-      }
+      const data = await api.getQuotation(accessToken, quotationId);
+      const quotation = data.quotation;
+      setFormData({
+        clientName: quotation.clientName,
+        clientAddress: quotation.clientAddress,
+        description: quotation.description,
+        price: quotation.price.toString(),
+        vatPercentage: quotation.vatPercentage.toString(),
+        status: quotation.status,
+        date: quotation.date.split('T')[0],
+      });
     } catch (error) {
       console.error('Error fetching quotation:', error);
     }
@@ -86,53 +76,20 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({ quotationId, onNav
         throw new Error('Je bent niet ingelogd. Log opnieuw in.');
       }
 
-      const url = quotationId
-        ? `https://${projectId}.supabase.co/functions/v1/server/quotations/${quotationId}`
-        : `https://${projectId}.supabase.co/functions/v1/server/quotations`;
+      const quotationData = {
+        ...formData,
+        price: parseFloat(formData.price),
+        vatPercentage: parseInt(formData.vatPercentage),
+      };
 
-      const method = quotationId ? 'PUT' : 'POST';
-
-      console.log('Sending quotation request to:', url);
-      console.log('Method:', method);
-      console.log('Form data:', formData);
-      console.log('Access token present:', !!accessToken);
-
-      const response = await fetch(url, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({
-          ...formData,
-          price: parseFloat(formData.price),
-          vatPercentage: parseInt(formData.vatPercentage),
-        }),
-      });
-
-      console.log('Response status:', response.status);
-      console.log('Response ok:', response.ok);
-      
-      let data;
-      try {
-        data = await response.json();
-        console.log('Response data:', data);
-      } catch (parseError) {
-        console.error('Failed to parse response as JSON:', parseError);
-        throw new Error('Ongeldig antwoord van server');
+      if (quotationId) {
+        await api.updateQuotation(accessToken, quotationId, quotationData);
+      } else {
+        await api.createQuotation(accessToken, quotationData);
       }
 
-      if (!response.ok) {
-        const errorMessage = data.error || `Server error (${response.status})`;
-        console.error('Server returned error:', errorMessage);
-        throw new Error(errorMessage);
-      }
-
-      // Success!
-      console.log('Quotation saved successfully!');
       setSuccess('Offerte succesvol opgeslagen!');
-      
-      // Wait a moment to show success message, then navigate
+
       setTimeout(() => {
         if (onSaved) {
           onSaved();
@@ -140,29 +97,25 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({ quotationId, onNav
           onNavigate('quotations');
         }
       }, 1000);
-      
+
     } catch (err: any) {
       console.error('Quotation save error:', err);
-      console.error('Error details:', {
-        message: err.message,
-        name: err.name,
-        stack: err.stack
-      });
       setError(err.message || 'Er is een onbekende fout opgetreden bij het opslaan');
     } finally {
       setLoading(false);
     }
   };
 
-  const calculateVat = () => {
+  const getVatAmount = () => {
     const price = parseFloat(formData.price) || 0;
     const vatPercentage = parseInt(formData.vatPercentage) || 0;
-    return (price * vatPercentage) / 100;
+    return calculateVat(price, vatPercentage);
   };
 
-  const calculateTotal = () => {
+  const getTotalAmount = () => {
     const price = parseFloat(formData.price) || 0;
-    return price + calculateVat();
+    const vatPercentage = parseInt(formData.vatPercentage) || 0;
+    return calculateTotal(price, vatPercentage);
   };
 
   return (
@@ -286,11 +239,11 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({ quotationId, onNav
                   </div>
                   <div className="flex justify-between">
                     <span>BTW ({formData.vatPercentage}%):</span>
-                    <span>€{calculateVat().toFixed(2)}</span>
+                    <span>€{getVatAmount().toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between font-bold text-lg border-t pt-2">
                     <span>Totaal incl. BTW:</span>
-                    <span>€{calculateTotal().toFixed(2)}</span>
+                    <span>€{getTotalAmount().toFixed(2)}</span>
                   </div>
                 </div>
               )}
