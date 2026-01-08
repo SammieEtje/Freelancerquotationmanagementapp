@@ -1,6 +1,6 @@
 // Gecentraliseerde API client voor Supabase Edge Functions
 
-import { projectId } from './supabase/info';
+import { projectId } from '../../utils/supabase/info';
 
 const API_BASE_URL = `https://${projectId}.supabase.co/functions/v1/server`;
 
