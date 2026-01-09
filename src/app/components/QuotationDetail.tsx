@@ -174,9 +174,10 @@ export const QuotationDetail: React.FC<QuotationDetailProps> = ({ quotationId, o
       doc.text(new Date(quotation.date).toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit', year: 'numeric' }), valueX, y);
       y += 6;
 
-      // Calculate validity date (30 days from quotation date)
-      const validUntil = new Date(quotation.date);
-      validUntil.setDate(validUntil.getDate() + 30);
+      // Expiry date (use stored value or calculate 30 days from quotation date)
+      const validUntil = quotation.expiryDate
+        ? new Date(quotation.expiryDate)
+        : (() => { const d = new Date(quotation.date); d.setDate(d.getDate() + 30); return d; })();
       doc.setTextColor(...grayColor);
       doc.text('Geldig tot:', labelX, y);
       doc.setTextColor(...darkColor);
@@ -186,8 +187,8 @@ export const QuotationDetail: React.FC<QuotationDetailProps> = ({ quotationId, o
 
       // === TABLE HEADER ===
       const col1 = margin; // Omschrijving
-      const col2 = 130; // Bedrag
-      const col3 = 155; // Aantal
+      const col2 = 115; // Bedrag
+      const col3 = 145; // Aantal
       const col4 = pageWidth - margin; // Totaal (right aligned)
 
       // Header line
@@ -209,40 +210,85 @@ export const QuotationDetail: React.FC<QuotationDetailProps> = ({ quotationId, o
       doc.line(margin, y, pageWidth - margin, y);
       y += 8;
 
-      // === TABLE CONTENT ===
-      doc.setTextColor(...darkColor);
-      doc.setFontSize(10);
-
-      // Description as line item
-      const descriptionLines = doc.splitTextToSize(quotation.description, 100);
-      doc.text(descriptionLines[0] || 'Werkzaamheden', col1, y);
-
       // Format price with euro sign and comma for decimals
       const formatPrice = (price: number) => {
         return price.toLocaleString('nl-NL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       };
 
-      doc.text(`€`, col2, y);
-      doc.text(formatPrice(quotation.price), col2 + 10, y);
-      doc.text('1', col3 + 5, y);
-      doc.text(`€`, col4 - 25, y);
-      doc.text(formatPrice(quotation.price), col4, y, { align: 'right' });
+      // === TABLE CONTENT ===
+      doc.setTextColor(...darkColor);
+      doc.setFontSize(10);
 
-      // Additional description lines if any
-      if (descriptionLines.length > 1) {
-        for (let i = 1; i < Math.min(descriptionLines.length, 5); i++) {
-          y += 5;
-          doc.setTextColor(...grayColor);
-          doc.setFontSize(9);
-          doc.text(descriptionLines[i], col1, y);
+      // Check if quotation has line items (new format) or single description (old format)
+      const lineItems = quotation.lineItems && quotation.lineItems.length > 0
+        ? quotation.lineItems
+        : [{
+            description: quotation.description,
+            unitPrice: quotation.price,
+            quantity: 1,
+            vatPercentage: quotation.vatPercentage
+          }];
+
+      // Render each line item
+      lineItems.forEach((item: any) => {
+        const itemTotal = (parseFloat(item.unitPrice) || 0) * (parseFloat(item.quantity) || 1);
+
+        // Check if we need a new page
+        if (y > pageHeight - 80) {
+          doc.addPage();
+          y = margin;
         }
-      }
 
-      y += 25;
+        // Description (truncate if too long)
+        const descLines = doc.splitTextToSize(item.description || '', 85);
+        doc.setTextColor(...darkColor);
+        doc.setFontSize(10);
+        doc.text(descLines[0] || '', col1, y);
+
+        // Unit price
+        doc.text(`€`, col2, y);
+        doc.text(formatPrice(parseFloat(item.unitPrice) || 0), col2 + 8, y);
+
+        // Quantity
+        doc.text(String(item.quantity || 1), col3, y);
+
+        // Line total
+        doc.text(`€`, col4 - 25, y);
+        doc.text(formatPrice(itemTotal), col4, y, { align: 'right' });
+
+        // Additional description lines if any
+        if (descLines.length > 1) {
+          for (let i = 1; i < Math.min(descLines.length, 3); i++) {
+            y += 5;
+            doc.setTextColor(...grayColor);
+            doc.setFontSize(9);
+            doc.text(descLines[i], col1, y);
+          }
+        }
+
+        y += 8;
+      });
+
+      y += 10;
 
       // === TOTALS SECTION ===
       const totalsLabelX = 130;
       const totalsValueX = pageWidth - margin;
+
+      // Calculate totals from line items
+      let subtotal = 0;
+      const vatTotals: { [key: string]: number } = {};
+
+      lineItems.forEach((item: any) => {
+        const itemTotal = (parseFloat(item.unitPrice) || 0) * (parseFloat(item.quantity) || 1);
+        subtotal += itemTotal;
+        const vatPct = String(item.vatPercentage || 21);
+        if (!vatTotals[vatPct]) vatTotals[vatPct] = 0;
+        vatTotals[vatPct] += (itemTotal * parseFloat(vatPct)) / 100;
+      });
+
+      const totalVat = Object.values(vatTotals).reduce((sum, v) => sum + v, 0);
+      const grandTotal = subtotal + totalVat;
 
       // Subtotal
       doc.setFontSize(10);
@@ -251,28 +297,31 @@ export const QuotationDetail: React.FC<QuotationDetailProps> = ({ quotationId, o
       doc.text('Subtotaal', totalsLabelX, y);
       doc.text('€', totalsValueX - 25, y);
       doc.setTextColor(...darkColor);
-      doc.text(formatPrice(quotation.price), totalsValueX, y, { align: 'right' });
+      doc.text(formatPrice(subtotal), totalsValueX, y, { align: 'right' });
 
       y += 7;
 
-      // VAT
-      const vatAmount = (quotation.price * quotation.vatPercentage) / 100;
-      doc.setTextColor(...grayColor);
-      doc.text(`${quotation.vatPercentage}% btw`, totalsLabelX, y);
-      doc.text('€', totalsValueX - 25, y);
-      doc.setTextColor(...darkColor);
-      doc.text(formatPrice(vatAmount), totalsValueX, y, { align: 'right' });
+      // VAT lines (per percentage)
+      Object.entries(vatTotals).forEach(([pct, amount]) => {
+        if (amount > 0) {
+          doc.setTextColor(...grayColor);
+          doc.text(`${pct}% btw`, totalsLabelX, y);
+          doc.text('€', totalsValueX - 25, y);
+          doc.setTextColor(...darkColor);
+          doc.text(formatPrice(amount), totalsValueX, y, { align: 'right' });
+          y += 7;
+        }
+      });
 
-      y += 12;
+      y += 5;
 
       // Total
-      const totalAmount = quotation.price + vatAmount;
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(...darkColor);
       doc.text('Totaal', totalsLabelX, y);
       doc.text('€', totalsValueX - 30, y);
       doc.setFontSize(12);
-      doc.text(formatPrice(totalAmount), totalsValueX, y, { align: 'right' });
+      doc.text(formatPrice(grandTotal), totalsValueX, y, { align: 'right' });
 
       // === FOOTER MESSAGE ===
       const footerY = pageHeight - 40;

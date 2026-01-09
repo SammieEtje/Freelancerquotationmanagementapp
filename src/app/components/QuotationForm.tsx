@@ -7,7 +7,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { useAuth } from './AuthContext';
 import { api } from '../../utils/apiClient';
-import { calculateVat, calculateTotal } from '../../utils/calculations';
 
 interface QuotationFormProps {
   quotationId?: string;
@@ -15,20 +14,44 @@ interface QuotationFormProps {
   onSaved?: () => void;
 }
 
+interface LineItem {
+  id: string;
+  description: string;
+  unitPrice: string;
+  quantity: string;
+  vatPercentage: string;
+}
+
+const createEmptyLineItem = (): LineItem => ({
+  id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+  description: '',
+  unitPrice: '',
+  quantity: '1',
+  vatPercentage: '21',
+});
+
 export const QuotationForm: React.FC<QuotationFormProps> = ({ quotationId, onNavigate, onSaved }) => {
   const { accessToken, loading: authLoading } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [lineItems, setLineItems] = useState<LineItem[]>([createEmptyLineItem()]);
   const [formData, setFormData] = useState({
     clientName: '',
     clientAddress: '',
-    description: '',
-    price: '',
-    vatPercentage: '21',
     status: 'draft',
     date: new Date().toISOString().split('T')[0],
+    expiryDate: '',
   });
+
+  // Set default expiry date to 30 days from now
+  useEffect(() => {
+    if (!formData.expiryDate && !quotationId) {
+      const defaultExpiry = new Date();
+      defaultExpiry.setDate(defaultExpiry.getDate() + 30);
+      setFormData(prev => ({ ...prev, expiryDate: defaultExpiry.toISOString().split('T')[0] }));
+    }
+  }, []);
 
   // Debug: Log access token status
   useEffect(() => {
@@ -54,15 +77,79 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({ quotationId, onNav
       setFormData({
         clientName: quotation.clientName,
         clientAddress: quotation.clientAddress,
-        description: quotation.description,
-        price: quotation.price.toString(),
-        vatPercentage: quotation.vatPercentage.toString(),
         status: quotation.status,
         date: quotation.date.split('T')[0],
+        expiryDate: quotation.expiryDate ? quotation.expiryDate.split('T')[0] : '',
       });
+
+      // Load line items if they exist, otherwise convert old format
+      if (quotation.lineItems && quotation.lineItems.length > 0) {
+        setLineItems(quotation.lineItems);
+      } else {
+        // Convert old single-price format to line items
+        setLineItems([{
+          id: '1',
+          description: quotation.description || '',
+          unitPrice: quotation.price?.toString() || '',
+          quantity: '1',
+          vatPercentage: quotation.vatPercentage?.toString() || '21',
+        }]);
+      }
     } catch (error) {
       console.error('Error fetching quotation:', error);
     }
+  };
+
+  // Line item handlers
+  const addLineItem = () => {
+    setLineItems([...lineItems, createEmptyLineItem()]);
+  };
+
+  const removeLineItem = (id: string) => {
+    if (lineItems.length > 1) {
+      setLineItems(lineItems.filter(item => item.id !== id));
+    }
+  };
+
+  const updateLineItem = (id: string, field: keyof LineItem, value: string) => {
+    setLineItems(lineItems.map(item =>
+      item.id === id ? { ...item, [field]: value } : item
+    ));
+  };
+
+  // Calculate totals
+  const getLineItemTotal = (item: LineItem) => {
+    const price = parseFloat(item.unitPrice) || 0;
+    const quantity = parseFloat(item.quantity) || 0;
+    return price * quantity;
+  };
+
+  const getLineItemVat = (item: LineItem) => {
+    const total = getLineItemTotal(item);
+    const vatPercentage = parseFloat(item.vatPercentage) || 0;
+    return (total * vatPercentage) / 100;
+  };
+
+  const getSubtotal = () => {
+    return lineItems.reduce((sum, item) => sum + getLineItemTotal(item), 0);
+  };
+
+  const getVatTotals = () => {
+    const vatMap: { [key: string]: number } = {};
+    lineItems.forEach(item => {
+      const vat = item.vatPercentage;
+      if (!vatMap[vat]) vatMap[vat] = 0;
+      vatMap[vat] += getLineItemVat(item);
+    });
+    return vatMap;
+  };
+
+  const getTotalVat = () => {
+    return lineItems.reduce((sum, item) => sum + getLineItemVat(item), 0);
+  };
+
+  const getGrandTotal = () => {
+    return getSubtotal() + getTotalVat();
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -76,10 +163,29 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({ quotationId, onNav
         throw new Error('Je bent niet ingelogd. Log opnieuw in.');
       }
 
+      // Validate line items
+      const validLineItems = lineItems.filter(item =>
+        item.description.trim() && parseFloat(item.unitPrice) > 0
+      );
+
+      if (validLineItems.length === 0) {
+        throw new Error('Voeg minimaal één regel met omschrijving en prijs toe.');
+      }
+
+      // Create description from line items for backwards compatibility
+      const description = validLineItems.map(item => item.description).join('\n');
+
       const quotationData = {
         ...formData,
-        price: parseFloat(formData.price),
-        vatPercentage: parseInt(formData.vatPercentage),
+        description,
+        price: getSubtotal(),
+        vatPercentage: 21, // Default, actual VAT is per line item
+        lineItems: validLineItems.map(item => ({
+          ...item,
+          unitPrice: parseFloat(item.unitPrice) || 0,
+          quantity: parseFloat(item.quantity) || 1,
+          vatPercentage: parseFloat(item.vatPercentage) || 21,
+        })),
       };
 
       if (quotationId) {
@@ -106,18 +212,6 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({ quotationId, onNav
     }
   };
 
-  const getVatAmount = () => {
-    const price = parseFloat(formData.price) || 0;
-    const vatPercentage = parseInt(formData.vatPercentage) || 0;
-    return calculateVat(price, vatPercentage);
-  };
-
-  const getTotalAmount = () => {
-    const price = parseFloat(formData.price) || 0;
-    const vatPercentage = parseInt(formData.vatPercentage) || 0;
-    return calculateTotal(price, vatPercentage);
-  };
-
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white shadow-sm">
@@ -138,112 +232,183 @@ export const QuotationForm: React.FC<QuotationFormProps> = ({ quotationId, onNav
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="clientName">Klant Naam *</Label>
-                  <Input
-                    id="clientName"
-                    value={formData.clientName}
-                    onChange={(e) => setFormData({ ...formData, clientName: e.target.value })}
-                    required
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="date">Datum *</Label>
-                  <Input
-                    id="date"
-                    type="date"
-                    value={formData.date}
-                    onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="clientAddress">Klant Adres *</Label>
-                <Textarea
-                  id="clientAddress"
-                  value={formData.clientAddress}
-                  onChange={(e) => setFormData({ ...formData, clientAddress: e.target.value })}
-                  rows={3}
-                  required
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="description">Omschrijving Werkzaamheden *</Label>
-                <Textarea
-                  id="description"
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  rows={5}
-                  required
-                />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="price">Prijs (excl. BTW) *</Label>
-                  <Input
-                    id="price"
-                    type="number"
-                    step="0.01"
-                    value={formData.price}
-                    onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-                    required
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="vatPercentage">BTW Percentage *</Label>
-                  <Select
-                    value={formData.vatPercentage}
-                    onValueChange={(value) => setFormData({ ...formData, vatPercentage: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="0">0%</SelectItem>
-                      <SelectItem value="9">9%</SelectItem>
-                      <SelectItem value="21">21%</SelectItem>
-                    </SelectContent>
-                  </Select>
+              {/* Klantgegevens */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold text-gray-700 border-b pb-2">Klantgegevens</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="clientName">Klant Naam *</Label>
+                    <Input
+                      id="clientName"
+                      value={formData.clientName}
+                      onChange={(e) => setFormData({ ...formData, clientName: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="clientAddress">Klant Adres *</Label>
+                    <Textarea
+                      id="clientAddress"
+                      value={formData.clientAddress}
+                      onChange={(e) => setFormData({ ...formData, clientAddress: e.target.value })}
+                      rows={3}
+                      required
+                    />
+                  </div>
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="status">Status *</Label>
-                <Select
-                  value={formData.status}
-                  onValueChange={(value) => setFormData({ ...formData, status: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="draft">Concept</SelectItem>
-                    <SelectItem value="sent">Verstuurd</SelectItem>
-                    <SelectItem value="accepted">Geaccepteerd</SelectItem>
-                  </SelectContent>
-                </Select>
+              {/* Offerte details */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold text-gray-700 border-b pb-2">Offerte Details</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="date">Offertedatum *</Label>
+                    <Input
+                      id="date"
+                      type="date"
+                      value={formData.date}
+                      onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="expiryDate">Geldig tot *</Label>
+                    <Input
+                      id="expiryDate"
+                      type="date"
+                      value={formData.expiryDate}
+                      onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="status">Status *</Label>
+                    <Select
+                      value={formData.status}
+                      onValueChange={(value) => setFormData({ ...formData, status: value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="draft">Concept</SelectItem>
+                        <SelectItem value="sent">Verstuurd</SelectItem>
+                        <SelectItem value="accepted">Geaccepteerd</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
               </div>
 
-              {formData.price && (
+              {/* Werkzaamheden / Regels */}
+              <div className="space-y-4">
+                <div className="flex justify-between items-center border-b pb-2">
+                  <h3 className="text-lg font-semibold text-gray-700">Werkzaamheden</h3>
+                  <Button type="button" variant="outline" size="sm" onClick={addLineItem}>
+                    + Regel toevoegen
+                  </Button>
+                </div>
+
+                {/* Table header */}
+                <div className="hidden md:grid md:grid-cols-12 gap-2 text-sm font-medium text-gray-600 px-2">
+                  <div className="col-span-5">Omschrijving</div>
+                  <div className="col-span-2">Bedrag</div>
+                  <div className="col-span-2">Aantal</div>
+                  <div className="col-span-2">BTW</div>
+                  <div className="col-span-1"></div>
+                </div>
+
+                {/* Line items */}
+                {lineItems.map((item, index) => (
+                  <div key={item.id} className="grid grid-cols-1 md:grid-cols-12 gap-2 p-3 bg-gray-50 rounded-lg">
+                    <div className="col-span-1 md:col-span-5">
+                      <Label className="md:hidden text-xs text-gray-500">Omschrijving</Label>
+                      <Input
+                        placeholder="Omschrijving werkzaamheden"
+                        value={item.description}
+                        onChange={(e) => updateLineItem(item.id, 'description', e.target.value)}
+                      />
+                    </div>
+                    <div className="col-span-1 md:col-span-2">
+                      <Label className="md:hidden text-xs text-gray-500">Bedrag (€)</Label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        placeholder="0,00"
+                        value={item.unitPrice}
+                        onChange={(e) => updateLineItem(item.id, 'unitPrice', e.target.value)}
+                      />
+                    </div>
+                    <div className="col-span-1 md:col-span-2">
+                      <Label className="md:hidden text-xs text-gray-500">Aantal</Label>
+                      <Input
+                        type="number"
+                        step="1"
+                        min="1"
+                        placeholder="1"
+                        value={item.quantity}
+                        onChange={(e) => updateLineItem(item.id, 'quantity', e.target.value)}
+                      />
+                    </div>
+                    <div className="col-span-1 md:col-span-2">
+                      <Label className="md:hidden text-xs text-gray-500">BTW %</Label>
+                      <Select
+                        value={item.vatPercentage}
+                        onValueChange={(value) => updateLineItem(item.id, 'vatPercentage', value)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="0">0%</SelectItem>
+                          <SelectItem value="9">9%</SelectItem>
+                          <SelectItem value="21">21%</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="col-span-1 md:col-span-1 flex items-end justify-end md:justify-center">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeLineItem(item.id)}
+                        disabled={lineItems.length === 1}
+                        className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                      >
+                        ×
+                      </Button>
+                    </div>
+                    {/* Line total (shown on mobile) */}
+                    <div className="col-span-1 md:hidden text-right text-sm font-medium text-gray-700">
+                      Totaal: €{getLineItemTotal(item).toFixed(2)}
+                    </div>
+                  </div>
+                ))}
+
+                <Button type="button" variant="ghost" size="sm" onClick={addLineItem} className="w-full border-2 border-dashed">
+                  + Nog een regel toevoegen
+                </Button>
+              </div>
+
+              {/* Totalen */}
+              {getSubtotal() > 0 && (
                 <div className="bg-blue-50 p-4 rounded-lg space-y-2">
                   <div className="flex justify-between">
-                    <span>Prijs excl. BTW:</span>
-                    <span>€{parseFloat(formData.price).toFixed(2)}</span>
+                    <span>Subtotaal:</span>
+                    <span>€{getSubtotal().toFixed(2)}</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span>BTW ({formData.vatPercentage}%):</span>
-                    <span>€{getVatAmount().toFixed(2)}</span>
-                  </div>
+                  {Object.entries(getVatTotals()).map(([percentage, amount]) => (
+                    amount > 0 && (
+                      <div key={percentage} className="flex justify-between text-gray-600">
+                        <span>BTW {percentage}%:</span>
+                        <span>€{amount.toFixed(2)}</span>
+                      </div>
+                    )
+                  ))}
                   <div className="flex justify-between font-bold text-lg border-t pt-2">
                     <span>Totaal incl. BTW:</span>
-                    <span>€{getTotalAmount().toFixed(2)}</span>
+                    <span>€{getGrandTotal().toFixed(2)}</span>
                   </div>
                 </div>
               )}
