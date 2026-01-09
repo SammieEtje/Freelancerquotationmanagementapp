@@ -51,7 +51,7 @@ export const QuotationDetail: React.FC<QuotationDetailProps> = ({ quotationId, o
     }
   };
 
-  const exportToPDF = () => {
+  const exportToPDF = async () => {
     if (!quotation || !profile) {
       alert('Gegevens worden geladen, probeer het over een moment opnieuw.');
       return;
@@ -61,111 +61,238 @@ export const QuotationDetail: React.FC<QuotationDetailProps> = ({ quotationId, o
       console.log('Starting PDF export...');
       const doc = new jsPDF();
       const pageWidth = doc.internal.pageSize.getWidth();
-      let y = 20;
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 20;
+      const rightCol = 120; // Start of right column
+      let y = margin;
 
-      // Company header
-      doc.setFontSize(20);
-      doc.text(profile.companyName || 'Bedrijfsnaam', 20, y);
-      y += 10;
+      // Colors
+      const primaryColor: [number, number, number] = [0, 102, 153]; // Professional blue
+      const grayColor: [number, number, number] = [100, 100, 100];
+      const darkColor: [number, number, number] = [40, 40, 40];
+      const accentColor: [number, number, number] = [180, 80, 60]; // Warm accent for footer
 
-      doc.setFontSize(10);
-      if (profile.address) {
-        doc.text(profile.address, 20, y);
-        y += 5;
+      // === HEADER SECTION ===
+      // Logo (left side) - larger size
+      if (profile.logo) {
+        try {
+          doc.addImage(profile.logo, 'AUTO', margin, y, 50, 25, undefined, 'FAST');
+        } catch (e) {
+          console.log('Could not add logo:', e);
+          // Fallback: show company name on left if no logo
+          doc.setFontSize(20);
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(...primaryColor);
+          doc.text(profile.companyName || 'Bedrijfsnaam', margin, y + 15);
+        }
+      } else {
+        // No logo - show company name prominently
+        doc.setFontSize(20);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(...primaryColor);
+        doc.text(profile.companyName || 'Bedrijfsnaam', margin, y + 15);
       }
+
+      // Company info (right side)
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(...darkColor);
+      doc.text(profile.companyName || '', rightCol, y + 5);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(...grayColor);
+      let rightY = y + 12;
+
+      if (profile.address) {
+        const addressLines = profile.address.split('\n');
+        addressLines.forEach((line: string) => {
+          doc.text(line, rightCol, rightY);
+          rightY += 5;
+        });
+      }
+      rightY += 2;
       if (profile.phone) {
-        doc.text(`Tel: ${profile.phone}`, 20, y);
-        y += 5;
+        doc.text(profile.phone, rightCol, rightY);
+        rightY += 5;
       }
       if (profile.email) {
-        doc.text(`E-mail: ${profile.email}`, 20, y);
-        y += 5;
+        doc.setTextColor(...primaryColor);
+        doc.text(profile.email, rightCol, rightY);
+        rightY += 7;
       }
+      doc.setTextColor(...grayColor);
       if (profile.kvkNumber) {
-        doc.text(`KvK: ${profile.kvkNumber}`, 20, y);
-        y += 5;
+        doc.text(`KvK: ${profile.kvkNumber}`, rightCol, rightY);
+        rightY += 5;
       }
       if (profile.vatNumber) {
-        doc.text(`BTW: ${profile.vatNumber}`, 20, y);
-        y += 5;
+        doc.text(profile.vatNumber, rightCol, rightY);
       }
 
-      y += 15;
+      y += 50;
 
-      // Quotation title
-      doc.setFontSize(16);
-      doc.text('OFFERTE', 20, y);
-      y += 10;
-
+      // === CLIENT INFO (left) ===
       doc.setFontSize(10);
-      doc.text(`Offertenummer: ${quotation.quotationNumber}`, 20, y);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(...darkColor);
+      doc.text(quotation.clientName, margin, y);
       y += 5;
-      doc.text(`Datum: ${new Date(quotation.date).toLocaleDateString('nl-NL')}`, 20, y);
-      y += 15;
 
-      // Client info
-      doc.setFontSize(12);
-      doc.text('Klantgegevens', 20, y);
-      y += 7;
-
-      doc.setFontSize(10);
-      doc.text(quotation.clientName, 20, y);
-      y += 5;
+      doc.setTextColor(...grayColor);
       const clientAddressLines = quotation.clientAddress.split('\n');
       clientAddressLines.forEach((line: string) => {
-        doc.text(line, 20, y);
+        doc.text(line, margin, y);
         y += 5;
       });
 
-      y += 10;
+      y += 20;
 
-      // Description
-      doc.setFontSize(12);
-      doc.text('Omschrijving werkzaamheden', 20, y);
-      y += 7;
+      // === OFFERTE TITLE ===
+      doc.setFontSize(24);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(...darkColor);
+      doc.text('Offerte', margin, y);
 
+      y += 12;
+
+      // === OFFERTE DETAILS ===
       doc.setFontSize(10);
-      const descriptionLines = doc.splitTextToSize(quotation.description, pageWidth - 40);
-      descriptionLines.forEach((line: string) => {
-        if (y > 270) {
-          doc.addPage();
-          y = 20;
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(...grayColor);
+
+      const labelX = margin;
+      const valueX = margin + 35;
+
+      doc.text('Offertenummer:', labelX, y);
+      doc.setTextColor(...darkColor);
+      doc.text(quotation.quotationNumber, valueX, y);
+      y += 6;
+
+      doc.setTextColor(...grayColor);
+      doc.text('Offertedatum:', labelX, y);
+      doc.setTextColor(...darkColor);
+      doc.text(new Date(quotation.date).toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit', year: 'numeric' }), valueX, y);
+      y += 6;
+
+      // Calculate validity date (30 days from quotation date)
+      const validUntil = new Date(quotation.date);
+      validUntil.setDate(validUntil.getDate() + 30);
+      doc.setTextColor(...grayColor);
+      doc.text('Geldig tot:', labelX, y);
+      doc.setTextColor(...darkColor);
+      doc.text(validUntil.toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit', year: 'numeric' }), valueX, y);
+
+      y += 15;
+
+      // === TABLE HEADER ===
+      const col1 = margin; // Omschrijving
+      const col2 = 130; // Bedrag
+      const col3 = 155; // Aantal
+      const col4 = pageWidth - margin; // Totaal (right aligned)
+
+      // Header line
+      doc.setDrawColor(...primaryColor);
+      doc.setLineWidth(0.5);
+      doc.line(margin, y, pageWidth - margin, y);
+      y += 6;
+
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(...primaryColor);
+      doc.text('Omschrijving', col1, y);
+      doc.text('Bedrag', col2, y);
+      doc.text('Aantal', col3, y);
+      doc.text('Totaal', col4, y, { align: 'right' });
+
+      y += 4;
+      doc.setDrawColor(...primaryColor);
+      doc.line(margin, y, pageWidth - margin, y);
+      y += 8;
+
+      // === TABLE CONTENT ===
+      doc.setTextColor(...darkColor);
+      doc.setFontSize(10);
+
+      // Description as line item
+      const descriptionLines = doc.splitTextToSize(quotation.description, 100);
+      doc.text(descriptionLines[0] || 'Werkzaamheden', col1, y);
+
+      // Format price with euro sign and comma for decimals
+      const formatPrice = (price: number) => {
+        return price.toLocaleString('nl-NL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      };
+
+      doc.text(`€`, col2, y);
+      doc.text(formatPrice(quotation.price), col2 + 10, y);
+      doc.text('1', col3 + 5, y);
+      doc.text(`€`, col4 - 25, y);
+      doc.text(formatPrice(quotation.price), col4, y, { align: 'right' });
+
+      // Additional description lines if any
+      if (descriptionLines.length > 1) {
+        for (let i = 1; i < Math.min(descriptionLines.length, 5); i++) {
+          y += 5;
+          doc.setTextColor(...grayColor);
+          doc.setFontSize(9);
+          doc.text(descriptionLines[i], col1, y);
         }
-        doc.text(line, 20, y);
-        y += 5;
-      });
+      }
 
-      y += 10;
+      y += 25;
 
-      // Financial details
-      const vatAmount = (quotation.price * quotation.vatPercentage) / 100;
-      const totalAmount = quotation.price + vatAmount;
+      // === TOTALS SECTION ===
+      const totalsLabelX = 130;
+      const totalsValueX = pageWidth - margin;
 
+      // Subtotal
       doc.setFontSize(10);
-      doc.text('Prijs (excl. BTW):', 120, y);
-      doc.text(`€ ${quotation.price.toFixed(2)}`, pageWidth - 40, y, { align: 'right' });
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(...grayColor);
+      doc.text('Subtotaal', totalsLabelX, y);
+      doc.text('€', totalsValueX - 25, y);
+      doc.setTextColor(...darkColor);
+      doc.text(formatPrice(quotation.price), totalsValueX, y, { align: 'right' });
+
       y += 7;
 
-      doc.text(`BTW (${quotation.vatPercentage}%):`, 120, y);
-      doc.text(`€ ${vatAmount.toFixed(2)}`, pageWidth - 40, y, { align: 'right' });
-      y += 7;
+      // VAT
+      const vatAmount = (quotation.price * quotation.vatPercentage) / 100;
+      doc.setTextColor(...grayColor);
+      doc.text(`${quotation.vatPercentage}% btw`, totalsLabelX, y);
+      doc.text('€', totalsValueX - 25, y);
+      doc.setTextColor(...darkColor);
+      doc.text(formatPrice(vatAmount), totalsValueX, y, { align: 'right' });
 
+      y += 12;
+
+      // Total
+      const totalAmount = quotation.price + vatAmount;
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(...darkColor);
+      doc.text('Totaal', totalsLabelX, y);
+      doc.text('€', totalsValueX - 30, y);
       doc.setFontSize(12);
-      doc.setFont(undefined, 'bold');
-      doc.text('Totaal (incl. BTW):', 120, y);
-      doc.text(`€ ${totalAmount.toFixed(2)}`, pageWidth - 40, y, { align: 'right' });
+      doc.text(formatPrice(totalAmount), totalsValueX, y, { align: 'right' });
 
-      // Footer
-      y = doc.internal.pageSize.getHeight() - 20;
-      doc.setFontSize(8);
-      doc.setFont(undefined, 'normal');
-      doc.text('Bedankt voor uw vertrouwen!', pageWidth / 2, y, { align: 'center' });
+      // === FOOTER MESSAGE ===
+      const footerY = pageHeight - 40;
+
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'italic');
+      doc.setTextColor(...accentColor);
+
+      const footerText = 'Wij verzoeken u vriendelijk om bij akkoord deze offerte ondertekend te retourneren.';
+      const footerLines = doc.splitTextToSize(footerText, pageWidth - (margin * 2));
+
+      footerLines.forEach((line: string, index: number) => {
+        doc.text(line, pageWidth / 2, footerY + (index * 5), { align: 'center' });
+      });
 
       // Save PDF
       const fileName = `Offerte-${quotation.quotationNumber}.pdf`;
       console.log('Saving PDF as:', fileName);
       doc.save(fileName);
-      
+
       // Show success message
       alert('PDF succesvol gedownload!');
     } catch (error) {
