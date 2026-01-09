@@ -4,7 +4,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { useAuth } from './AuthContext';
 import { api } from '../../utils/apiClient';
 import { getStatusLabel, getStatusColor } from '../../utils/statusHelpers';
-import { DebugPanel } from './DebugPanel';
 
 interface DashboardProps {
   onNavigate: (page: string) => void;
@@ -79,10 +78,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
           <h2 className="text-xl mb-4">Welkom, {user?.email}</h2>
-          
-          {/* Debug Panel - tijdelijk voor troubleshooting */}
-          <DebugPanel />
-          
+
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
             <Card>
               <CardHeader className="pb-2">
