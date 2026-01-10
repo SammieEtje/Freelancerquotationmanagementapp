@@ -290,9 +290,9 @@ app.put("/quotations/:id", async (c) => {
 // --- Delete quotation ---
 app.delete("/quotations/:id", async (c) => {
   console.log('[Quotations DELETE/:id] Request received');
-  
+
   const { user, error } = await getUserFromToken(c.req.header('Authorization'));
-  
+
   if (error || !user) {
     console.log('[Quotations DELETE/:id] Auth failed:', error);
     return c.json({ error: "Unauthorized" }, 401);
@@ -303,6 +303,231 @@ app.delete("/quotations/:id", async (c) => {
 
   console.log('[Quotations DELETE/:id] Success for:', id);
   return c.json({ success: true });
+});
+
+// =====================
+// INVOICE ENDPOINTS
+// =====================
+
+// --- Create invoice ---
+app.post("/invoices", async (c) => {
+  console.log('[Invoices POST] Request received');
+
+  const { user, error } = await getUserFromToken(c.req.header('Authorization'));
+
+  if (error || !user) {
+    console.log('[Invoices POST] Auth failed:', error);
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  try {
+    const data = await c.req.json();
+
+    // Get next invoice number
+    const existingInvoices = await kv.getByPrefix(`invoice:${user.id}:`);
+    const nextNumber = (existingInvoices?.length || 0) + 1;
+    const invoiceNumber = `FAC-${new Date().getFullYear()}-${String(nextNumber).padStart(4, '0')}`;
+
+    const timestamp = Date.now();
+    const invoice = {
+      id: `${timestamp}`,
+      invoiceNumber,
+      userId: user.id,
+      clientName: data.clientName,
+      clientAddress: data.clientAddress,
+      description: data.description,
+      price: data.price,
+      vatPercentage: data.vatPercentage,
+      lineItems: data.lineItems || [],
+      status: data.status || "draft",
+      date: data.date || new Date().toISOString(),
+      dueDate: data.dueDate || null,
+      paidDate: data.paidDate || null,
+      quotationId: data.quotationId || null,
+      quotationNumber: data.quotationNumber || null,
+      paymentTermDays: data.paymentTermDays || 30,
+      notes: data.notes || '',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    await kv.set(`invoice:${user.id}:${invoice.id}`, invoice);
+
+    console.log('[Invoices POST] Success for user:', user.id);
+    return c.json({ invoice });
+  } catch (err) {
+    console.log('[Invoices POST] Error:', err);
+    return c.json({ error: "Failed to create invoice" }, 500);
+  }
+});
+
+// --- Get all invoices ---
+app.get("/invoices", async (c) => {
+  console.log('[Invoices GET] Request received');
+
+  const { user, error } = await getUserFromToken(c.req.header('Authorization'));
+
+  if (error || !user) {
+    console.log('[Invoices GET] Auth failed:', error);
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  const invoices = await kv.getByPrefix(`invoice:${user.id}:`);
+
+  console.log('[Invoices GET] Success, found:', invoices?.length || 0);
+  return c.json({ invoices: invoices || [] });
+});
+
+// --- Get single invoice ---
+app.get("/invoices/:id", async (c) => {
+  console.log('[Invoices GET/:id] Request received');
+
+  const { user, error } = await getUserFromToken(c.req.header('Authorization'));
+
+  if (error || !user) {
+    console.log('[Invoices GET/:id] Auth failed:', error);
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  const id = c.req.param("id");
+  const invoice = await kv.get(`invoice:${user.id}:${id}`);
+
+  if (!invoice) {
+    console.log('[Invoices GET/:id] Not found:', id);
+    return c.json({ error: "Invoice not found" }, 404);
+  }
+
+  console.log('[Invoices GET/:id] Success for:', id);
+  return c.json({ invoice });
+});
+
+// --- Update invoice ---
+app.put("/invoices/:id", async (c) => {
+  console.log('[Invoices PUT/:id] Request received');
+
+  const { user, error } = await getUserFromToken(c.req.header('Authorization'));
+
+  if (error || !user) {
+    console.log('[Invoices PUT/:id] Auth failed:', error);
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  try {
+    const id = c.req.param("id");
+    const currentInvoice = await kv.get(`invoice:${user.id}:${id}`);
+
+    if (!currentInvoice) {
+      console.log('[Invoices PUT/:id] Not found:', id);
+      return c.json({ error: "Invoice not found" }, 404);
+    }
+
+    const updates = await c.req.json();
+    const updatedInvoice = {
+      ...currentInvoice,
+      ...updates,
+      userId: user.id,
+      id: currentInvoice.id,
+      invoiceNumber: currentInvoice.invoiceNumber,
+      updatedAt: new Date().toISOString()
+    };
+
+    await kv.set(`invoice:${user.id}:${id}`, updatedInvoice);
+
+    console.log('[Invoices PUT/:id] Success for:', id);
+    return c.json({ invoice: updatedInvoice });
+  } catch (err) {
+    console.log('[Invoices PUT/:id] Error:', err);
+    return c.json({ error: "Failed to update invoice" }, 500);
+  }
+});
+
+// --- Delete invoice ---
+app.delete("/invoices/:id", async (c) => {
+  console.log('[Invoices DELETE/:id] Request received');
+
+  const { user, error } = await getUserFromToken(c.req.header('Authorization'));
+
+  if (error || !user) {
+    console.log('[Invoices DELETE/:id] Auth failed:', error);
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  const id = c.req.param("id");
+  await kv.del(`invoice:${user.id}:${id}`);
+
+  console.log('[Invoices DELETE/:id] Success for:', id);
+  return c.json({ success: true });
+});
+
+// --- Convert quotation to invoice ---
+app.post("/quotations/:id/convert-to-invoice", async (c) => {
+  console.log('[Convert to Invoice] Request received');
+
+  const { user, error } = await getUserFromToken(c.req.header('Authorization'));
+
+  if (error || !user) {
+    console.log('[Convert to Invoice] Auth failed:', error);
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  try {
+    const quotationId = c.req.param("id");
+    const quotation = await kv.get(`quotation:${user.id}:${quotationId}`);
+
+    if (!quotation) {
+      console.log('[Convert to Invoice] Quotation not found:', quotationId);
+      return c.json({ error: "Quotation not found" }, 404);
+    }
+
+    // Get next invoice number
+    const existingInvoices = await kv.getByPrefix(`invoice:${user.id}:`);
+    const nextNumber = (existingInvoices?.length || 0) + 1;
+    const invoiceNumber = `FAC-${new Date().getFullYear()}-${String(nextNumber).padStart(4, '0')}`;
+
+    const timestamp = Date.now();
+    const dueDate = new Date();
+    dueDate.setDate(dueDate.getDate() + 30);
+
+    const invoice = {
+      id: `${timestamp}`,
+      invoiceNumber,
+      userId: user.id,
+      clientName: quotation.clientName,
+      clientAddress: quotation.clientAddress,
+      description: quotation.description,
+      price: quotation.price,
+      vatPercentage: quotation.vatPercentage,
+      lineItems: quotation.lineItems || [],
+      status: "sent",
+      date: new Date().toISOString(),
+      dueDate: dueDate.toISOString(),
+      paidDate: null,
+      quotationId: quotation.id,
+      quotationNumber: quotation.quotationNumber,
+      paymentTermDays: 30,
+      notes: '',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    await kv.set(`invoice:${user.id}:${invoice.id}`, invoice);
+
+    // Update quotation status to accepted if not already
+    if (quotation.status !== 'accepted') {
+      await kv.set(`quotation:${user.id}:${quotationId}`, {
+        ...quotation,
+        status: 'accepted',
+        invoiceId: invoice.id,
+        updatedAt: new Date().toISOString()
+      });
+    }
+
+    console.log('[Convert to Invoice] Success, created invoice:', invoice.invoiceNumber);
+    return c.json({ invoice });
+  } catch (err) {
+    console.log('[Convert to Invoice] Error:', err);
+    return c.json({ error: "Failed to convert quotation to invoice" }, 500);
+  }
 });
 
 // --- Start server ---

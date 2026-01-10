@@ -67,4 +67,33 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(data),
     }),
+
+  // Invoices
+  getInvoices: (accessToken: string) =>
+    apiRequest<{ invoices: any[] }>('/invoices', accessToken),
+
+  getInvoice: (accessToken: string, id: string) =>
+    apiRequest<{ invoice: any }>(`/invoices/${id}`, accessToken),
+
+  createInvoice: (accessToken: string, data: any) =>
+    apiRequest<{ invoice: any }>('/invoices', accessToken, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  updateInvoice: (accessToken: string, id: string, data: any) =>
+    apiRequest<{ invoice: any }>(`/invoices/${id}`, accessToken, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  deleteInvoice: (accessToken: string, id: string) =>
+    apiRequest<{ success: boolean }>(`/invoices/${id}`, accessToken, {
+      method: 'DELETE',
+    }),
+
+  convertQuotationToInvoice: (accessToken: string, quotationId: string) =>
+    apiRequest<{ invoice: any }>(`/quotations/${quotationId}/convert-to-invoice`, accessToken, {
+      method: 'POST',
+    }),
 };

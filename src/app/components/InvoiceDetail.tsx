@@ -3,34 +3,53 @@ import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { useAuth } from './AuthContext';
 import { api } from '../../utils/apiClient';
-import { getStatusLabel, getStatusColor } from '../../utils/statusHelpers';
 import { calculateVat, calculateTotal } from '../../utils/calculations';
 import jsPDF from 'jspdf';
 
-interface QuotationDetailProps {
-  quotationId: string;
+interface InvoiceDetailProps {
+  invoiceId: string;
   onNavigate: (page: string) => void;
 }
 
-export const QuotationDetail: React.FC<QuotationDetailProps> = ({ quotationId, onNavigate }) => {
+const getInvoiceStatusLabel = (status: string) => {
+  const labels: { [key: string]: string } = {
+    draft: 'Concept',
+    sent: 'Verstuurd',
+    paid: 'Betaald',
+    overdue: 'Vervallen',
+  };
+  return labels[status] || status;
+};
+
+const getInvoiceStatusColor = (status: string) => {
+  const colors: { [key: string]: string } = {
+    draft: 'bg-gray-100 text-gray-800',
+    sent: 'bg-yellow-100 text-yellow-800',
+    paid: 'bg-green-100 text-green-800',
+    overdue: 'bg-red-100 text-red-800',
+  };
+  return colors[status] || 'bg-gray-100 text-gray-800';
+};
+
+export const InvoiceDetail: React.FC<InvoiceDetailProps> = ({ invoiceId, onNavigate }) => {
   const { accessToken } = useAuth();
-  const [quotation, setQuotation] = useState<any>(null);
+  const [invoice, setInvoice] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetchData();
-  }, [quotationId, accessToken]);
+  }, [invoiceId, accessToken]);
 
   const fetchData = async () => {
     if (!accessToken) return;
 
     try {
-      const [quotationData, profileData] = await Promise.all([
-        api.getQuotation(accessToken, quotationId),
+      const [invoiceData, profileData] = await Promise.all([
+        api.getInvoice(accessToken, invoiceId),
         api.getProfile(accessToken),
       ]);
-      setQuotation(quotationData.quotation);
+      setInvoice(invoiceData.invoice);
       setProfile(profileData.profile);
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -40,33 +59,33 @@ export const QuotationDetail: React.FC<QuotationDetailProps> = ({ quotationId, o
   };
 
   const handleDelete = async () => {
-    if (!confirm('Weet je zeker dat je deze offerte wilt verwijderen?')) return;
+    if (!confirm('Weet je zeker dat je deze factuur wilt verwijderen?')) return;
     if (!accessToken) return;
 
     try {
-      await api.deleteQuotation(accessToken, quotationId);
-      onNavigate('quotations');
+      await api.deleteInvoice(accessToken, invoiceId);
+      onNavigate('invoices');
     } catch (error) {
-      console.error('Error deleting quotation:', error);
+      console.error('Error deleting invoice:', error);
     }
   };
 
-  const handleConvertToInvoice = async () => {
-    if (!confirm('Wil je deze offerte omzetten naar een factuur?')) return;
+  const handleMarkAsPaid = async () => {
     if (!accessToken) return;
 
     try {
-      const result = await api.convertQuotationToInvoice(accessToken, quotationId);
-      alert(`Factuur ${result.invoice.invoiceNumber} is aangemaakt!`);
-      onNavigate(`invoice-detail-${result.invoice.id}`);
+      await api.updateInvoice(accessToken, invoiceId, {
+        status: 'paid',
+        paidDate: new Date().toISOString(),
+      });
+      fetchData();
     } catch (error) {
-      console.error('Error converting to invoice:', error);
-      alert('Er is een fout opgetreden bij het omzetten naar factuur.');
+      console.error('Error updating invoice:', error);
     }
   };
 
   const exportToPDF = async () => {
-    if (!quotation || !profile) {
+    if (!invoice || !profile) {
       alert('Gegevens worden geladen, probeer het over een moment opnieuw.');
       return;
     }
@@ -77,30 +96,28 @@ export const QuotationDetail: React.FC<QuotationDetailProps> = ({ quotationId, o
       const pageWidth = doc.internal.pageSize.getWidth();
       const pageHeight = doc.internal.pageSize.getHeight();
       const margin = 20;
-      const rightCol = 120; // Start of right column
+      const rightCol = 120;
       let y = margin;
 
       // Colors
-      const primaryColor: [number, number, number] = [0, 102, 153]; // Professional blue
+      const primaryColor: [number, number, number] = [0, 102, 153];
       const grayColor: [number, number, number] = [100, 100, 100];
       const darkColor: [number, number, number] = [40, 40, 40];
-      const accentColor: [number, number, number] = [180, 80, 60]; // Warm accent for footer
+      const accentColor: [number, number, number] = [34, 139, 34]; // Green for invoices
 
       // === HEADER SECTION ===
-      // Logo (left side) - larger size
+      // Logo (left side)
       if (profile.logo) {
         try {
           doc.addImage(profile.logo, 'AUTO', margin, y, 50, 25, undefined, 'FAST');
         } catch (e) {
           console.log('Could not add logo:', e);
-          // Fallback: show company name on left if no logo
           doc.setFontSize(20);
           doc.setFont('helvetica', 'bold');
           doc.setTextColor(...primaryColor);
           doc.text(profile.companyName || 'Bedrijfsnaam', margin, y + 15);
         }
       } else {
-        // No logo - show company name prominently
         doc.setFontSize(20);
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(...primaryColor);
@@ -141,6 +158,11 @@ export const QuotationDetail: React.FC<QuotationDetailProps> = ({ quotationId, o
       }
       if (profile.vatNumber) {
         doc.text(profile.vatNumber, rightCol, rightY);
+        rightY += 5;
+      }
+      // Bank details for invoices
+      if (profile.iban) {
+        doc.text(`IBAN: ${profile.iban}`, rightCol, rightY);
       }
 
       y += 50;
@@ -149,11 +171,11 @@ export const QuotationDetail: React.FC<QuotationDetailProps> = ({ quotationId, o
       doc.setFontSize(10);
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(...darkColor);
-      doc.text(quotation.clientName, margin, y);
+      doc.text(invoice.clientName, margin, y);
       y += 5;
 
       doc.setTextColor(...grayColor);
-      const clientAddressLines = quotation.clientAddress.split('\n');
+      const clientAddressLines = invoice.clientAddress.split('\n');
       clientAddressLines.forEach((line: string) => {
         doc.text(line, margin, y);
         y += 5;
@@ -161,15 +183,23 @@ export const QuotationDetail: React.FC<QuotationDetailProps> = ({ quotationId, o
 
       y += 20;
 
-      // === OFFERTE TITLE ===
+      // === FACTUUR TITLE ===
       doc.setFontSize(24);
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(...darkColor);
-      doc.text('Offerte', margin, y);
+      doc.text('Factuur', margin, y);
+
+      // Paid stamp if applicable
+      if (invoice.status === 'paid') {
+        doc.setFontSize(16);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(...accentColor);
+        doc.text('BETAALD', pageWidth - margin - 30, y, { align: 'right' });
+      }
 
       y += 12;
 
-      // === OFFERTE DETAILS ===
+      // === FACTUUR DETAILS ===
       doc.setFontSize(10);
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(...grayColor);
@@ -177,35 +207,41 @@ export const QuotationDetail: React.FC<QuotationDetailProps> = ({ quotationId, o
       const labelX = margin;
       const valueX = margin + 35;
 
-      doc.text('Offertenummer:', labelX, y);
+      doc.text('Factuurnummer:', labelX, y);
       doc.setTextColor(...darkColor);
-      doc.text(quotation.quotationNumber, valueX, y);
+      doc.text(invoice.invoiceNumber, valueX, y);
       y += 6;
 
       doc.setTextColor(...grayColor);
-      doc.text('Offertedatum:', labelX, y);
+      doc.text('Factuurdatum:', labelX, y);
       doc.setTextColor(...darkColor);
-      doc.text(new Date(quotation.date).toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit', year: 'numeric' }), valueX, y);
+      doc.text(new Date(invoice.date).toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit', year: 'numeric' }), valueX, y);
       y += 6;
 
-      // Expiry date (use stored value or calculate 30 days from quotation date)
-      const validUntil = quotation.expiryDate
-        ? new Date(quotation.expiryDate)
-        : (() => { const d = new Date(quotation.date); d.setDate(d.getDate() + 30); return d; })();
-      doc.setTextColor(...grayColor);
-      doc.text('Geldig tot:', labelX, y);
-      doc.setTextColor(...darkColor);
-      doc.text(validUntil.toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit', year: 'numeric' }), valueX, y);
+      if (invoice.dueDate) {
+        doc.setTextColor(...grayColor);
+        doc.text('Vervaldatum:', labelX, y);
+        doc.setTextColor(...darkColor);
+        doc.text(new Date(invoice.dueDate).toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit', year: 'numeric' }), valueX, y);
+        y += 6;
+      }
 
-      y += 15;
+      if (invoice.quotationNumber) {
+        doc.setTextColor(...grayColor);
+        doc.text('Offerte ref:', labelX, y);
+        doc.setTextColor(...darkColor);
+        doc.text(invoice.quotationNumber, valueX, y);
+        y += 6;
+      }
+
+      y += 10;
 
       // === TABLE HEADER ===
-      const col1 = margin; // Omschrijving
-      const col2 = 115; // Bedrag
-      const col3 = 145; // Aantal
-      const col4 = pageWidth - margin; // Totaal (right aligned)
+      const col1 = margin;
+      const col2 = 115;
+      const col3 = 145;
+      const col4 = pageWidth - margin;
 
-      // Header line
       doc.setDrawColor(...primaryColor);
       doc.setLineWidth(0.5);
       doc.line(margin, y, pageWidth - margin, y);
@@ -224,7 +260,6 @@ export const QuotationDetail: React.FC<QuotationDetailProps> = ({ quotationId, o
       doc.line(margin, y, pageWidth - margin, y);
       y += 8;
 
-      // Format price with euro sign and comma for decimals
       const formatPrice = (price: number) => {
         return price.toLocaleString('nl-NL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       };
@@ -233,44 +268,36 @@ export const QuotationDetail: React.FC<QuotationDetailProps> = ({ quotationId, o
       doc.setTextColor(...darkColor);
       doc.setFontSize(10);
 
-      // Check if quotation has line items (new format) or single description (old format)
-      const lineItems = quotation.lineItems && quotation.lineItems.length > 0
-        ? quotation.lineItems
+      const lineItems = invoice.lineItems && invoice.lineItems.length > 0
+        ? invoice.lineItems
         : [{
-            description: quotation.description,
-            unitPrice: quotation.price,
+            description: invoice.description,
+            unitPrice: invoice.price,
             quantity: 1,
-            vatPercentage: quotation.vatPercentage
+            vatPercentage: invoice.vatPercentage
           }];
 
-      // Render each line item
       lineItems.forEach((item: any) => {
         const itemTotal = (parseFloat(item.unitPrice) || 0) * (parseFloat(item.quantity) || 1);
 
-        // Check if we need a new page
         if (y > pageHeight - 80) {
           doc.addPage();
           y = margin;
         }
 
-        // Description (truncate if too long)
         const descLines = doc.splitTextToSize(item.description || '', 85);
         doc.setTextColor(...darkColor);
         doc.setFontSize(10);
         doc.text(descLines[0] || '', col1, y);
 
-        // Unit price
         doc.text(`€`, col2, y);
         doc.text(formatPrice(parseFloat(item.unitPrice) || 0), col2 + 8, y);
 
-        // Quantity
         doc.text(String(item.quantity || 1), col3, y);
 
-        // Line total
         doc.text(`€`, col4 - 25, y);
         doc.text(formatPrice(itemTotal), col4, y, { align: 'right' });
 
-        // Additional description lines if any
         if (descLines.length > 1) {
           for (let i = 1; i < Math.min(descLines.length, 3); i++) {
             y += 5;
@@ -289,7 +316,6 @@ export const QuotationDetail: React.FC<QuotationDetailProps> = ({ quotationId, o
       const totalsLabelX = 130;
       const totalsValueX = pageWidth - margin;
 
-      // Calculate totals from line items
       let subtotal = 0;
       const vatTotals: { [key: string]: number } = {};
 
@@ -304,7 +330,6 @@ export const QuotationDetail: React.FC<QuotationDetailProps> = ({ quotationId, o
       const totalVat = Object.values(vatTotals).reduce((sum, v) => sum + v, 0);
       const grandTotal = subtotal + totalVat;
 
-      // Subtotal
       doc.setFontSize(10);
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(...grayColor);
@@ -315,7 +340,6 @@ export const QuotationDetail: React.FC<QuotationDetailProps> = ({ quotationId, o
 
       y += 7;
 
-      // VAT lines (per percentage)
       Object.entries(vatTotals).forEach(([pct, amount]) => {
         if (amount > 0) {
           doc.setTextColor(...grayColor);
@@ -329,7 +353,6 @@ export const QuotationDetail: React.FC<QuotationDetailProps> = ({ quotationId, o
 
       y += 5;
 
-      // Total
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(...darkColor);
       doc.text('Totaal', totalsLabelX, y);
@@ -337,26 +360,55 @@ export const QuotationDetail: React.FC<QuotationDetailProps> = ({ quotationId, o
       doc.setFontSize(12);
       doc.text(formatPrice(grandTotal), totalsValueX, y, { align: 'right' });
 
+      // === PAYMENT INFO ===
+      y += 20;
+
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(...darkColor);
+      doc.text('Betalingsgegevens:', margin, y);
+      y += 6;
+
+      doc.setTextColor(...grayColor);
+      if (profile.iban) {
+        doc.text(`IBAN: ${profile.iban}`, margin, y);
+        y += 5;
+      }
+      doc.text(`t.n.v. ${profile.companyName}`, margin, y);
+      y += 5;
+      doc.text(`o.v.v. ${invoice.invoiceNumber}`, margin, y);
+
       // === FOOTER MESSAGE ===
-      const footerY = pageHeight - 40;
+      const footerY = pageHeight - 35;
 
       doc.setFontSize(9);
       doc.setFont('helvetica', 'italic');
       doc.setTextColor(...accentColor);
 
-      const footerText = 'Wij verzoeken u vriendelijk om bij akkoord deze offerte ondertekend te retourneren.';
+      const footerText = `Wij verzoeken u vriendelijk het totaalbedrag van €${formatPrice(grandTotal)} binnen ${invoice.paymentTermDays || 30} dagen over te maken.`;
       const footerLines = doc.splitTextToSize(footerText, pageWidth - (margin * 2));
 
       footerLines.forEach((line: string, index: number) => {
         doc.text(line, pageWidth / 2, footerY + (index * 5), { align: 'center' });
       });
 
+      // Notes if present
+      if (invoice.notes) {
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(...grayColor);
+        const notesY = footerY + footerLines.length * 5 + 5;
+        const notesLines = doc.splitTextToSize(`Opmerking: ${invoice.notes}`, pageWidth - (margin * 2));
+        notesLines.forEach((line: string, index: number) => {
+          doc.text(line, pageWidth / 2, notesY + (index * 4), { align: 'center' });
+        });
+      }
+
       // Save PDF
-      const fileName = `Offerte-${quotation.quotationNumber}.pdf`;
+      const fileName = `Factuur-${invoice.invoiceNumber}.pdf`;
       console.log('Saving PDF as:', fileName);
       doc.save(fileName);
 
-      // Show success message
       alert('PDF succesvol gedownload!');
     } catch (error) {
       console.error('PDF export error:', error);
@@ -368,12 +420,12 @@ export const QuotationDetail: React.FC<QuotationDetailProps> = ({ quotationId, o
     return <div className="min-h-screen bg-gray-50 flex items-center justify-center">Laden...</div>;
   }
 
-  if (!quotation) {
+  if (!invoice) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <p className="mb-4">Offerte niet gevonden</p>
-          <Button onClick={() => onNavigate('quotations')}>Terug naar Overzicht</Button>
+          <p className="mb-4">Factuur niet gevonden</p>
+          <Button onClick={() => onNavigate('invoices')}>Terug naar Overzicht</Button>
         </div>
       </div>
     );
@@ -384,11 +436,11 @@ export const QuotationDetail: React.FC<QuotationDetailProps> = ({ quotationId, o
       <header className="bg-white shadow-sm">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex justify-between items-center">
-            <Button variant="ghost" onClick={() => onNavigate('quotations')}>
+            <Button variant="ghost" onClick={() => onNavigate('invoices')}>
               ← Terug naar Overzicht
             </Button>
             <div className="flex space-x-2">
-              <Button variant="outline" onClick={() => onNavigate(`edit-quotation-${quotationId}`)}>
+              <Button variant="outline" onClick={() => onNavigate(`edit-invoice-${invoiceId}`)}>
                 Bewerken
               </Button>
               <Button onClick={exportToPDF}>
@@ -404,54 +456,78 @@ export const QuotationDetail: React.FC<QuotationDetailProps> = ({ quotationId, o
           <CardHeader>
             <div className="flex justify-between items-start">
               <div>
-                <CardTitle className="text-2xl mb-2">Offerte Details</CardTitle>
-                <p className="text-gray-600">{quotation.quotationNumber}</p>
+                <CardTitle className="text-2xl mb-2">Factuur Details</CardTitle>
+                <p className="text-gray-600">{invoice.invoiceNumber}</p>
+                {invoice.quotationNumber && (
+                  <p className="text-sm text-gray-500 mt-1">
+                    Op basis van offerte: {invoice.quotationNumber}
+                  </p>
+                )}
               </div>
-              <span className={`text-sm px-3 py-1 rounded ${getStatusColor(quotation.status)}`}>
-                {getStatusLabel(quotation.status)}
+              <span className={`text-sm px-3 py-1 rounded ${getInvoiceStatusColor(invoice.status)}`}>
+                {getInvoiceStatusLabel(invoice.status)}
               </span>
             </div>
           </CardHeader>
           <CardContent className="space-y-6">
             <div>
               <h3 className="font-semibold mb-2">Klantgegevens</h3>
-              <p className="font-medium">{quotation.clientName}</p>
-              <p className="text-gray-600 whitespace-pre-line">{quotation.clientAddress}</p>
+              <p className="font-medium">{invoice.clientName}</p>
+              <p className="text-gray-600 whitespace-pre-line">{invoice.clientAddress}</p>
             </div>
 
-            <div>
-              <h3 className="font-semibold mb-2">Datum</h3>
-              <p>{new Date(quotation.date).toLocaleDateString('nl-NL', { 
-                year: 'numeric', 
-                month: 'long', 
-                day: 'numeric' 
-              })}</p>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <h3 className="font-semibold mb-2">Factuurdatum</h3>
+                <p>{new Date(invoice.date).toLocaleDateString('nl-NL', {
+                  year: 'numeric',
+                  month: 'long',
+                  day: 'numeric'
+                })}</p>
+              </div>
+              {invoice.dueDate && (
+                <div>
+                  <h3 className="font-semibold mb-2">Vervaldatum</h3>
+                  <p>{new Date(invoice.dueDate).toLocaleDateString('nl-NL', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
+                  })}</p>
+                </div>
+              )}
             </div>
 
             <div>
               <h3 className="font-semibold mb-2">Omschrijving Werkzaamheden</h3>
-              <p className="text-gray-700 whitespace-pre-line">{quotation.description}</p>
+              <p className="text-gray-700 whitespace-pre-line">{invoice.description}</p>
             </div>
 
-            <div className="bg-blue-50 p-4 rounded-lg space-y-2">
+            <div className="bg-green-50 p-4 rounded-lg space-y-2">
               <div className="flex justify-between">
                 <span>Prijs excl. BTW:</span>
-                <span>€{quotation.price.toFixed(2)}</span>
+                <span>€{invoice.price.toFixed(2)}</span>
               </div>
               <div className="flex justify-between">
-                <span>BTW ({quotation.vatPercentage}%):</span>
-                <span>€{calculateVat(quotation.price, quotation.vatPercentage).toFixed(2)}</span>
+                <span>BTW ({invoice.vatPercentage}%):</span>
+                <span>€{calculateVat(invoice.price, invoice.vatPercentage).toFixed(2)}</span>
               </div>
               <div className="flex justify-between font-bold text-lg border-t pt-2">
                 <span>Totaal incl. BTW:</span>
-                <span>€{calculateTotal(quotation.price, quotation.vatPercentage).toFixed(2)}</span>
+                <span>€{calculateTotal(invoice.price, invoice.vatPercentage).toFixed(2)}</span>
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-4 pt-4">
-              {(quotation.status === 'sent' || quotation.status === 'accepted') && (
-                <Button onClick={handleConvertToInvoice} className="bg-green-600 hover:bg-green-700">
-                  Omzetten naar Factuur
+            {invoice.notes && (
+              <div>
+                <h3 className="font-semibold mb-2">Opmerkingen</h3>
+                <p className="text-gray-700">{invoice.notes}</p>
+              </div>
+            )}
+
+            <div className="flex space-x-4 pt-4">
+              {invoice.status !== 'paid' && (
+                <Button onClick={handleMarkAsPaid} className="bg-green-600 hover:bg-green-700">
+                  Markeer als Betaald
                 </Button>
               )}
               <Button variant="destructive" onClick={handleDelete}>

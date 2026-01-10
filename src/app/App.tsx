@@ -6,18 +6,23 @@ import { Dashboard } from './components/Dashboard';
 import { QuotationForm } from './components/QuotationForm';
 import { QuotationsList } from './components/QuotationsList';
 import { QuotationDetail } from './components/QuotationDetail';
+import { InvoiceForm } from './components/InvoiceForm';
+import { InvoicesList } from './components/InvoicesList';
+import { InvoiceDetail } from './components/InvoiceDetail';
 import { Settings } from './components/Settings';
 import { Toaster } from './components/ui/sonner';
 
-type Page = 
-  | 'landing' 
-  | 'signin' 
-  | 'signup' 
-  | 'dashboard' 
-  | 'create-quotation' 
-  | 'quotations' 
+type Page =
+  | 'landing'
+  | 'signin'
+  | 'signup'
+  | 'dashboard'
+  | 'create-quotation'
+  | 'quotations'
+  | 'create-invoice'
+  | 'invoices'
   | 'settings'
-  | string; // for dynamic pages like quotation-detail-123
+  | string; // for dynamic pages like quotation-detail-123, invoice-detail-123
 
 const AppContent: React.FC = () => {
   const authContext = useAuth();
@@ -124,6 +129,35 @@ const AppContent: React.FC = () => {
     return (
       <QuotationDetail
         quotationId={quotationId}
+        onNavigate={handleNavigate}
+      />
+    );
+  }
+
+  // Invoice routes
+  if (currentPage === 'create-invoice') {
+    return <InvoiceForm onNavigate={handleNavigate} />;
+  }
+
+  if (currentPage.startsWith('edit-invoice-')) {
+    const invoiceId = currentPage.replace('edit-invoice-', '');
+    return (
+      <InvoiceForm
+        invoiceId={invoiceId}
+        onNavigate={handleNavigate}
+      />
+    );
+  }
+
+  if (currentPage === 'invoices') {
+    return <InvoicesList onNavigate={handleNavigate} />;
+  }
+
+  if (currentPage.startsWith('invoice-detail-')) {
+    const invoiceId = currentPage.replace('invoice-detail-', '');
+    return (
+      <InvoiceDetail
+        invoiceId={invoiceId}
         onNavigate={handleNavigate}
       />
     );
