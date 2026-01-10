@@ -9,6 +9,9 @@ import { QuotationDetail } from './components/QuotationDetail';
 import { InvoiceForm } from './components/InvoiceForm';
 import { InvoicesList } from './components/InvoicesList';
 import { InvoiceDetail } from './components/InvoiceDetail';
+import { ClientForm } from './components/ClientForm';
+import { ClientsList } from './components/ClientsList';
+import { ClientDetail } from './components/ClientDetail';
 import { Settings } from './components/Settings';
 import { Toaster } from './components/ui/sonner';
 
@@ -21,8 +24,10 @@ type Page =
   | 'quotations'
   | 'create-invoice'
   | 'invoices'
+  | 'create-client'
+  | 'clients'
   | 'settings'
-  | string; // for dynamic pages like quotation-detail-123, invoice-detail-123
+  | string; // for dynamic pages like quotation-detail-123, invoice-detail-123, client-detail-123
 
 const AppContent: React.FC = () => {
   const authContext = useAuth();
@@ -158,6 +163,35 @@ const AppContent: React.FC = () => {
     return (
       <InvoiceDetail
         invoiceId={invoiceId}
+        onNavigate={handleNavigate}
+      />
+    );
+  }
+
+  // Client routes
+  if (currentPage === 'create-client') {
+    return <ClientForm onNavigate={handleNavigate} />;
+  }
+
+  if (currentPage.startsWith('edit-client-')) {
+    const clientId = currentPage.replace('edit-client-', '');
+    return (
+      <ClientForm
+        clientId={clientId}
+        onNavigate={handleNavigate}
+      />
+    );
+  }
+
+  if (currentPage === 'clients') {
+    return <ClientsList onNavigate={handleNavigate} />;
+  }
+
+  if (currentPage.startsWith('client-detail-')) {
+    const clientId = currentPage.replace('client-detail-', '');
+    return (
+      <ClientDetail
+        clientId={clientId}
         onNavigate={handleNavigate}
       />
     );

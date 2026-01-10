@@ -530,5 +530,185 @@ app.post("/quotations/:id/convert-to-invoice", async (c) => {
   }
 });
 
+// =====================
+// CLIENT ENDPOINTS
+// =====================
+
+// --- Create client ---
+app.post("/clients", async (c) => {
+  console.log('[Clients POST] Request received');
+
+  const { user, error } = await getUserFromToken(c.req.header('Authorization'));
+
+  if (error || !user) {
+    console.log('[Clients POST] Auth failed:', error);
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  try {
+    const data = await c.req.json();
+    const timestamp = Date.now();
+
+    const client = {
+      id: `${timestamp}`,
+      userId: user.id,
+      name: data.name,
+      email: data.email || '',
+      phone: data.phone || '',
+      address: data.address || '',
+      city: data.city || '',
+      postalCode: data.postalCode || '',
+      country: data.country || 'Nederland',
+      kvkNumber: data.kvkNumber || '',
+      vatNumber: data.vatNumber || '',
+      notes: data.notes || '',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    await kv.set(`client:${user.id}:${client.id}`, client);
+
+    console.log('[Clients POST] Success for user:', user.id);
+    return c.json({ client });
+  } catch (err) {
+    console.log('[Clients POST] Error:', err);
+    return c.json({ error: "Failed to create client" }, 500);
+  }
+});
+
+// --- Get all clients ---
+app.get("/clients", async (c) => {
+  console.log('[Clients GET] Request received');
+
+  const { user, error } = await getUserFromToken(c.req.header('Authorization'));
+
+  if (error || !user) {
+    console.log('[Clients GET] Auth failed:', error);
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  const clients = await kv.getByPrefix(`client:${user.id}:`);
+
+  console.log('[Clients GET] Success, found:', clients?.length || 0);
+  return c.json({ clients: clients || [] });
+});
+
+// --- Get single client ---
+app.get("/clients/:id", async (c) => {
+  console.log('[Clients GET/:id] Request received');
+
+  const { user, error } = await getUserFromToken(c.req.header('Authorization'));
+
+  if (error || !user) {
+    console.log('[Clients GET/:id] Auth failed:', error);
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  const id = c.req.param("id");
+  const client = await kv.get(`client:${user.id}:${id}`);
+
+  if (!client) {
+    console.log('[Clients GET/:id] Not found:', id);
+    return c.json({ error: "Client not found" }, 404);
+  }
+
+  console.log('[Clients GET/:id] Success for:', id);
+  return c.json({ client });
+});
+
+// --- Update client ---
+app.put("/clients/:id", async (c) => {
+  console.log('[Clients PUT/:id] Request received');
+
+  const { user, error } = await getUserFromToken(c.req.header('Authorization'));
+
+  if (error || !user) {
+    console.log('[Clients PUT/:id] Auth failed:', error);
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  try {
+    const id = c.req.param("id");
+    const currentClient = await kv.get(`client:${user.id}:${id}`);
+
+    if (!currentClient) {
+      console.log('[Clients PUT/:id] Not found:', id);
+      return c.json({ error: "Client not found" }, 404);
+    }
+
+    const updates = await c.req.json();
+    const updatedClient = {
+      ...currentClient,
+      ...updates,
+      userId: user.id,
+      id: currentClient.id,
+      updatedAt: new Date().toISOString()
+    };
+
+    await kv.set(`client:${user.id}:${id}`, updatedClient);
+
+    console.log('[Clients PUT/:id] Success for:', id);
+    return c.json({ client: updatedClient });
+  } catch (err) {
+    console.log('[Clients PUT/:id] Error:', err);
+    return c.json({ error: "Failed to update client" }, 500);
+  }
+});
+
+// --- Delete client ---
+app.delete("/clients/:id", async (c) => {
+  console.log('[Clients DELETE/:id] Request received');
+
+  const { user, error } = await getUserFromToken(c.req.header('Authorization'));
+
+  if (error || !user) {
+    console.log('[Clients DELETE/:id] Auth failed:', error);
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  const id = c.req.param("id");
+  await kv.del(`client:${user.id}:${id}`);
+
+  console.log('[Clients DELETE/:id] Success for:', id);
+  return c.json({ success: true });
+});
+
+// --- Get client history (quotations + invoices) ---
+app.get("/clients/:id/history", async (c) => {
+  console.log('[Client History] Request received');
+
+  const { user, error } = await getUserFromToken(c.req.header('Authorization'));
+
+  if (error || !user) {
+    console.log('[Client History] Auth failed:', error);
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  const clientId = c.req.param("id");
+  const client = await kv.get(`client:${user.id}:${clientId}`);
+
+  if (!client) {
+    return c.json({ error: "Client not found" }, 404);
+  }
+
+  // Get all quotations and invoices for this client
+  const allQuotations = await kv.getByPrefix(`quotation:${user.id}:`);
+  const allInvoices = await kv.getByPrefix(`invoice:${user.id}:`);
+
+  const clientQuotations = (allQuotations || []).filter(
+    (q: any) => q.clientId === clientId || q.clientName === client.name
+  );
+  const clientInvoices = (allInvoices || []).filter(
+    (i: any) => i.clientId === clientId || i.clientName === client.name
+  );
+
+  console.log('[Client History] Found:', clientQuotations.length, 'quotations,', clientInvoices.length, 'invoices');
+  return c.json({
+    client,
+    quotations: clientQuotations,
+    invoices: clientInvoices,
+  });
+});
+
 // --- Start server ---
 Deno.serve(app.fetch);

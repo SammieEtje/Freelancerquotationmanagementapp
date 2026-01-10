@@ -96,4 +96,31 @@ export const api = {
     apiRequest<{ invoice: any }>(`/quotations/${quotationId}/convert-to-invoice`, accessToken, {
       method: 'POST',
     }),
+
+  // Clients
+  getClients: (accessToken: string) =>
+    apiRequest<{ clients: any[] }>('/clients', accessToken),
+
+  getClient: (accessToken: string, id: string) =>
+    apiRequest<{ client: any }>(`/clients/${id}`, accessToken),
+
+  createClient: (accessToken: string, data: any) =>
+    apiRequest<{ client: any }>('/clients', accessToken, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  updateClient: (accessToken: string, id: string, data: any) =>
+    apiRequest<{ client: any }>(`/clients/${id}`, accessToken, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  deleteClient: (accessToken: string, id: string) =>
+    apiRequest<{ success: boolean }>(`/clients/${id}`, accessToken, {
+      method: 'DELETE',
+    }),
+
+  getClientHistory: (accessToken: string, id: string) =>
+    apiRequest<{ client: any; quotations: any[]; invoices: any[] }>(`/clients/${id}/history`, accessToken),
 };

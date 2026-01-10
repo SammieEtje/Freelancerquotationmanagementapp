@@ -36,6 +36,8 @@ export const InvoiceForm: React.FC<InvoiceFormProps> = ({ invoiceId, onNavigate,
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [lineItems, setLineItems] = useState<LineItem[]>([createEmptyLineItem()]);
+  const [clients, setClients] = useState<any[]>([]);
+  const [selectedClientId, setSelectedClientId] = useState<string>('');
   const [formData, setFormData] = useState({
     clientName: '',
     clientAddress: '',
@@ -45,6 +47,20 @@ export const InvoiceForm: React.FC<InvoiceFormProps> = ({ invoiceId, onNavigate,
     paymentTermDays: '30',
     notes: '',
   });
+
+  // Fetch clients for selector
+  useEffect(() => {
+    const fetchClients = async () => {
+      if (!accessToken) return;
+      try {
+        const data = await api.getClients(accessToken);
+        setClients(data.clients || []);
+      } catch (error) {
+        console.error('Error fetching clients:', error);
+      }
+    };
+    fetchClients();
+  }, [accessToken]);
 
   // Set default due date to 30 days from now
   useEffect(() => {
@@ -60,6 +76,31 @@ export const InvoiceForm: React.FC<InvoiceFormProps> = ({ invoiceId, onNavigate,
       fetchInvoice();
     }
   }, [invoiceId]);
+
+  // Handle client selection
+  const handleClientSelect = (clientId: string) => {
+    setSelectedClientId(clientId);
+    if (clientId === 'new') {
+      setFormData(prev => ({ ...prev, clientName: '', clientAddress: '' }));
+      return;
+    }
+    const client = clients.find(c => c.id === clientId);
+    if (client) {
+      const addressParts = [];
+      if (client.address) addressParts.push(client.address);
+      if (client.postalCode || client.city) {
+        addressParts.push([client.postalCode, client.city].filter(Boolean).join(' '));
+      }
+      if (client.country && client.country !== 'Nederland') {
+        addressParts.push(client.country);
+      }
+      setFormData(prev => ({
+        ...prev,
+        clientName: client.name,
+        clientAddress: addressParts.join('\n'),
+      }));
+    }
+  };
 
   const fetchInvoice = async () => {
     if (!accessToken || !invoiceId) return;
@@ -245,6 +286,27 @@ export const InvoiceForm: React.FC<InvoiceFormProps> = ({ invoiceId, onNavigate,
               {/* Klantgegevens */}
               <div className="space-y-4">
                 <h3 className="text-lg font-semibold text-gray-700 border-b pb-2">Klantgegevens</h3>
+
+                {/* Client selector */}
+                {clients.length > 0 && (
+                  <div className="space-y-2">
+                    <Label>Selecteer bestaande klant</Label>
+                    <Select value={selectedClientId} onValueChange={handleClientSelect}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Kies een klant of voer handmatig in..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="new">-- Nieuwe klant (handmatig invullen) --</SelectItem>
+                        {clients.map((client) => (
+                          <SelectItem key={client.id} value={client.id}>
+                            {client.name} {client.city && `(${client.city})`}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="clientName">Klant Naam *</Label>

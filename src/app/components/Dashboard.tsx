@@ -53,6 +53,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const [invoiceStats, setInvoiceStats] = useState<InvoiceStats>({
     total: 0, totalValue: 0, paidValue: 0, openValue: 0, draft: 0, sent: 0, paid: 0, overdue: 0
   });
+  const [clientCount, setClientCount] = useState(0);
   const [recentQuotations, setRecentQuotations] = useState<any[]>([]);
   const [recentInvoices, setRecentInvoices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -65,10 +66,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     if (!accessToken) return;
 
     try {
-      const [quotationsData, invoicesData] = await Promise.all([
+      const [quotationsData, invoicesData, clientsData] = await Promise.all([
         api.getQuotations(accessToken),
         api.getInvoices(accessToken),
+        api.getClients(accessToken),
       ]);
+
+      setClientCount((clientsData.clients || []).length);
 
       const quotations = quotationsData.quotations || [];
       const invoices = invoicesData.invoices || [];
@@ -133,6 +137,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
           <div className="flex justify-between items-center">
             <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
             <div className="flex items-center space-x-4">
+              <Button variant="ghost" onClick={() => onNavigate('clients')}>
+                Klanten ({clientCount})
+              </Button>
               <Button variant="ghost" onClick={() => onNavigate('settings')}>
                 Instellingen
               </Button>
